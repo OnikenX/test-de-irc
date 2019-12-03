@@ -10,6 +10,7 @@ de comando.
 #include <winsock.h>
 
 #define BUFFERSIZE	4096
+#define TIMEOUT 10
 
 void AtendeCliente(LPVOID param);
 int exchange(SOCKET s1, SOCKET s2);
@@ -30,10 +31,8 @@ int main(int argc,char *argv[]){
 	SECURITY_ATTRIBUTES sa;
 	DWORD thread_id;
 
-    printf("ola\n");
-
 	if(argc!=4){
-		fprintf(stderr, "Usage: %s <porto de escuta> <maquina destino> <porto destino>\n",argv[0]); 
+		fprintf(stderr, "Usage: %s <porto de escuta> <maquina destino> <porto destino>\n",argv[0]);
 		exit(EXIT_SUCCESS);
 	}
 
@@ -48,8 +47,8 @@ int main(int argc,char *argv[]){
 	/*===== PREENCHE A ESTRUTURA DE ENDERECO PARA O SERVIDOR ============*/
 	memset((char *)&dest_addr, 0, sizeof(dest_addr));
 	dest_addr.sin_family = AF_INET;
-	dest_addr.sin_port = htons(atoi(argv[3]));//htons(5555);
-	dest_addr.sin_addr.s_addr = inet_addr(argv[2]);//htonl("127.0.0.1");
+	dest_addr.sin_port = htons(atoi(argv[3]));
+	dest_addr.sin_addr.s_addr = inet_addr(argv[2]);
 
 	//Resolve o nome caso seja necessario ...
 	if(dest_addr.sin_addr.s_addr==INADDR_NONE){
@@ -97,7 +96,7 @@ int main(int argc,char *argv[]){
 			sa.lpSecurityDescriptor=NULL;
 
 			if(CreateThread(&sa,0 ,(LPTHREAD_START_ROUTINE)AtendeCliente, (LPVOID)newSock, (DWORD)0, &thread_id)==NULL){
-				printf("<SER> Nao e' possivel iniciar uma nova thread (error: %d)\n", GetLastError());			
+				printf("<SER> Nao e' possivel iniciar uma nova thread (error: %d)\n", GetLastError());
 				printf("<SER> O cliente <%s:%d> nao sera' atendido\n", inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
 				closesocket(newSock);
 			}
@@ -118,7 +117,7 @@ void AtendeCliente(LPVOID param){
 	sockCli = (SOCKET)param;
 
 	//Cria o socket para comunicar com o servidor
-	if((sockDest=socket(PF_INET, SOCK_STREAM,0)) == SOCKET_ERROR){
+	if((sockDest = socket(PF_INET, SOCK_STREAM, 0)) == SOCKET_ERROR){
 		fprintf(stderr,"<SER_%d> Erro na criacao do socket para comunicar com o servidor POP3 (%d)...\n", GetCurrentThreadId(), WSAGetLastError());
 		closesocket(sockCli);
 		return;
@@ -126,7 +125,7 @@ void AtendeCliente(LPVOID param){
 
 	//Liga o socket ao servidor
 	if(connect(sockDest, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) == SOCKET_ERROR){
-		fprintf(stderr,"<SER_%d> Erro na ligacao ao servidor POP3 (%d)...\n", GetCurrentThreadId(), WSAGetLastError());	
+		fprintf(stderr,"<SER_%d> Erro na ligacao ao servidor POP3 (%d)...\n", GetCurrentThreadId(), WSAGetLastError());
 		closesocket(sockCli); closesocket(sockDest);
 		return;
 	}
@@ -135,15 +134,14 @@ void AtendeCliente(LPVOID param){
 	FD_ZERO(&fdread);
 	//Coloca sockCli e sockDest em fdread
 	FD_SET(sockCli, &fdread);
-    FD_SET(sockDest, &fdread);
-	
+	FD_SET(sockDest, &fdread);
 
 	while(1){
 		/*==================== PROCESSA PEDIDO ==========================*/
 
 		fdtemp=fdread;
 
-		switch(select(32,&fdtemp,NULL,NULL,NULL)){ // Sem timeout
+		switch(select(32, &fdtemp, NULL, NULL, NULL)){ // Sem timeout
 			case SOCKET_ERROR:
 
 				if(WSAGetLastError()==WSAEINTR)
@@ -154,7 +152,7 @@ void AtendeCliente(LPVOID param){
 				return;
 
 			default:
-				//Testa sockCli para leitura nao bloqueante 
+				//Testa sockCli para leitura nao bloqueante
 				if(FD_ISSET(sockCli, &fdtemp)){
 					if(exchange(sockCli, sockDest) <= 0){
 						closesocket(sockCli); closesocket(sockDest);
@@ -189,27 +187,26 @@ int exchange(SOCKET s1, SOCKET s2)
 	char c;
 
 	//Recebe um char em s1 e escreve-o em s2
-	if((result = recv(s1,&c,sizeof(char),0))==sizeof(char))
-    result = send(s1,&c,sizeof(char),0);
-
-    if(result==0)
-        fprintf(stderr,"ser %d connection closed bt foreign host\n", GetCurrentThreadId());
-
-    if(result== SOCKET_ERROR)
-        fprintf(stderr,"ser %d erro  no acesso para i/o a um dos coskets (%d)\n", GetCurrentThreadId(), WSAGetLastError);
+	if((result = recv(s1, &c, sizeof(char), 0)) == sizeof(char))
+        result = send(s2, &c, sizeof(char), 0);
+    if(result == 0)
+        fprintf(stderr, "<SER_%d> Connection closed by foreign host\n", GetCurrentThreadId());
+    if (result == SOCKET_ERROR){
+        fprintf(stderr,"<SER_%d> Erro no acesso para I/O a um dos sockets (%d)\n", GetCurrentThreadId(), WSAGetLastError());
+    }
 
 	return result;
 }
 
 /*________________________________ Abort________________________________________
-Mostra a mensagem de erro associada ao ultimo erro dos Winsock e abandona com 
+Mostra a mensagem de erro associada ao ultimo erro dos Winsock e abandona com
 "exit status" a 1
 _______________________________________________________________________________
 */
 void Abort(char *msg, SOCKET s)
 {
 	fprintf(stderr,"\a<SER_%d> Erro fatal: <%d>\n",  GetCurrentThreadId(), msg, WSAGetLastError());
-	
+
 	if(s != INVALID_SOCKET)
 		closesocket(s);
 
